@@ -20,12 +20,12 @@ CONFIG_FILE = 'config.json'
 if not os.path.exists(IMG_DIR):
     os.makedirs(IMG_DIR)
 
-# --- 3. 自訂 CSS 美化樣式 (區塊色系設計) ---
+# --- 3. 自訂 CSS 美化樣式 ---
 st.markdown("""
     <style>
     /* 頂部大標題區塊 */
     .header-container {
-        background-color: #1E3A8A; /* 深藍色背景 */
+        background-color: #1E3A8A;
         padding: 30px;
         border-radius: 15px;
         margin-bottom: 25px;
@@ -33,8 +33,8 @@ st.markdown("""
         box-shadow: 0 4px 6px rgba(0,0,0,0.1);
     }
     .main-title {
-        font-size: 3rem; /* 特大字體 */
-        color: #FFFFFF; /* 白色文字 */
+        font-size: 3rem;
+        color: #FFFFFF;
         font-weight: 900;
         margin: 0;
         letter-spacing: 2px;
@@ -42,13 +42,13 @@ st.markdown("""
     }
     .sub-title {
         font-size: 1.2rem;
-        color: #E0E7FF; /* 淺藍白色 */
+        color: #E0E7FF;
         margin-top: 10px;
     }
     
     /* 狀態標籤樣式 */
     .status-badge-open {
-        background-color: #EF4444; /* 紅色 */
+        background-color: #EF4444;
         color: white;
         padding: 5px 12px;
         border-radius: 20px;
@@ -56,7 +56,7 @@ st.markdown("""
         font-weight: bold;
     }
     .status-badge-closed {
-        background-color: #10B981; /* 綠色 */
+        background-color: #10B981;
         color: white;
         padding: 5px 12px;
         border-radius: 20px;
@@ -66,7 +66,7 @@ st.markdown("""
     
     /* 倒數計時樣式 */
     .countdown-tag {
-        background-color: #F59E0B; /* 橘黃色 */
+        background-color: #F59E0B;
         color: white;
         padding: 4px 10px;
         border-radius: 8px;
@@ -75,7 +75,7 @@ st.markdown("""
         margin-left: 10px;
     }
     .expired-tag {
-        background-color: #6B7280; /* 灰色 */
+        background-color: #6B7280;
         color: white;
         padding: 4px 10px;
         border-radius: 8px;
@@ -88,29 +88,24 @@ st.markdown("""
 
 # --- 4. 輔助函數 ---
 
-# 載入設定 (認領天數)
 def load_config():
     if os.path.exists(CONFIG_FILE):
         with open(CONFIG_FILE, 'r') as f:
             return json.load(f)
-    return {"expiry_days": 60} # 預設 60 天
+    return {"expiry_days": 60}
 
-# 儲存設定
 def save_config(config):
     with open(CONFIG_FILE, 'w') as f:
         json.dump(config, f)
 
-# 載入資料
 def load_data():
     if not os.path.exists(DATA_FILE):
         return pd.DataFrame(columns=["ID", "物品名稱", "拾獲地點", "拾獲日期", "特徵描述", "圖片路徑", "狀態"])
     return pd.read_csv(DATA_FILE)
 
-# 儲存資料
 def save_data(df):
     df.to_csv(DATA_FILE, index=False)
 
-# 刪除功能
 def delete_item(item_id):
     df = load_data()
     target_row = df[df['ID'] == item_id]
@@ -124,13 +119,11 @@ def delete_item(item_id):
         df = df[df['ID'] != item_id]
         save_data(df)
 
-# 更新狀態
 def update_status(item_id):
     df = load_data()
     df.loc[df['ID'] == item_id, '狀態'] = '已領回'
     save_data(df)
 
-# 計算剩餘天數
 def get_days_left(found_date_str, expiry_days):
     try:
         found_date = datetime.strptime(found_date_str, "%Y-%m-%d").date()
@@ -143,7 +136,6 @@ def get_days_left(found_date_str, expiry_days):
 
 # --- 5. 主程式 ---
 def main():
-    # 載入全域設定
     config = load_config()
     current_expiry_days = config.get("expiry_days", 60)
 
@@ -157,6 +149,22 @@ def main():
     
     # --- 側邊欄 ---
     with st.sidebar:
+        # 管理員登入區塊 (移到最上方，方便老師操作)
+        st.markdown("### 🔐 管理員登入")
+        st.caption("輸入密碼以啟用「結案」與「刪除」權限")
+        admin_pwd = st.text_input("管理密碼", type="password", placeholder="老師請在此輸入")
+        
+        # 判斷是否為管理員
+        is_admin = (admin_pwd == "720720")
+        
+        if is_admin:
+            st.success("🔓 管理員模式已啟用")
+        elif admin_pwd:
+            st.error("密碼錯誤")
+            
+        st.divider()
+
+        # 新增物品 (任何人都可以新增，或是您也可以把這裡包在 is_admin 裡面)
         st.header("➕ 新增拾獲物品")
         
         with st.form("add_item_form", clear_on_submit=True):
@@ -199,27 +207,15 @@ def main():
                 else:
                     st.error("⚠️ 缺漏必填項目")
 
-        st.divider()
-        
-        # --- 管理員專區 ---
-        st.markdown("### 🔐 管理員專區")
-        admin_pwd = st.text_input("輸入密碼啟用管理功能", type="password")
-        is_admin = (admin_pwd == "720720")
-        
+        # 系統設定 (僅管理員可見)
         if is_admin:
-            st.success("🔓 管理員已登入")
-            
-            st.write("---")
+            st.divider()
             st.subheader("⚙️ 系統設定")
-            # 管理員可調整認領天數
             new_expiry = st.number_input("設定認領期限 (天)", min_value=1, value=current_expiry_days)
             if new_expiry != current_expiry_days:
                 config["expiry_days"] = new_expiry
                 save_config(config)
-                st.rerun() # 立即重新整理套用設定
-                
-        elif admin_pwd:
-            st.error("密碼錯誤")
+                st.rerun()
 
     # --- 主畫面顯示 ---
     col_filter, col_space = st.columns([2, 5])
@@ -244,7 +240,6 @@ def main():
             with st.container(border=True):
                 col1, col2, col3 = st.columns([1.5, 2.5, 1])
                 
-                # 計算倒數天數
                 days_left, deadline_date = get_days_left(row['拾獲日期'], current_expiry_days)
                 
                 with col1:
@@ -254,14 +249,12 @@ def main():
                         st.warning("圖片遺失")
                 
                 with col2:
-                    # 標題區：名稱 + 狀態 + 倒數標籤
                     header_cols = st.columns([3, 2])
                     with header_cols[0]:
                         st.markdown(f"### {row['物品名稱']}")
                     with header_cols[1]:
                         if row['狀態'] == "未領取":
                             st.markdown('<span class="status-badge-open">🔴 等待失主</span>', unsafe_allow_html=True)
-                            # 只有未領取的才顯示倒數
                             if days_left >= 0:
                                 st.markdown(f'<span class="countdown-tag">⏳ 剩餘 {days_left} 天</span>', unsafe_allow_html=True)
                             else:
@@ -275,23 +268,32 @@ def main():
                     st.markdown(f"**🛑 截止日：** {deadline_date} (保留 {current_expiry_days} 天)")
                     st.markdown(f"**📝 描述：** {row['特徵描述']}")
 
+                # 右側操作區塊 (權限控管核心)
                 with col3:
                     st.write("") 
                     st.write("") 
                     
                     if row['狀態'] == "未領取":
-                        st.button(
-                            "🙋‍♂️ 有人領走了", 
-                            key=f"claim_{row['ID']}", 
-                            type="primary",
-                            on_click=lambda id=row['ID']: update_status(id)
-                        )
+                        # 權限判斷
+                        if is_admin:
+                            # 只有管理員看得到「有人領走了」
+                            st.button(
+                                "🙋‍♂️ 有人領走了", 
+                                key=f"claim_{row['ID']}", 
+                                type="primary",
+                                on_click=lambda id=row['ID']: update_status(id)
+                            )
+                        else:
+                            # 一般人只會看到提示訊息
+                            st.info("ℹ️ 欲認領請洽學務處")
                     
+                    # 刪除按鈕 (只有管理員看得到)
                     if is_admin:
                         st.write("") 
                         st.button(
                             "🗑️ 刪除資料",
                             key=f"delete_{row['ID']}",
+                            help="此操作無法復原",
                             on_click=lambda id=row['ID']: delete_item(id)
                         )
 
