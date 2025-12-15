@@ -90,8 +90,11 @@ st.markdown("""
 
 def load_config():
     if os.path.exists(CONFIG_FILE):
-        with open(CONFIG_FILE, 'r') as f:
-            return json.load(f)
+        try:
+            with open(CONFIG_FILE, 'r') as f:
+                return json.load(f)
+        except:
+            return {"expiry_days": 60}
     return {"expiry_days": 60}
 
 def save_config(config):
@@ -110,12 +113,14 @@ def delete_item(item_id):
     df = load_data()
     target_row = df[df['ID'] == item_id]
     if not target_row.empty:
+        # 取得圖片路徑並刪除檔案
         img_path = target_row.iloc[0]['圖片路徑']
-        if os.path.exists(img_path):
+        if pd.notna(img_path) and os.path.exists(str(img_path)):
             try:
-                os.remove(img_path)
+                os.remove(str(img_path))
             except:
                 pass
+        # 刪除資料行
         df = df[df['ID'] != item_id]
         save_data(df)
 
@@ -126,7 +131,7 @@ def update_status(item_id):
 
 def get_days_left(found_date_str, expiry_days):
     try:
-        found_date = datetime.strptime(found_date_str, "%Y-%m-%d").date()
+        found_date = datetime.strptime(str(found_date_str), "%Y-%m-%d").date()
         deadline = found_date + timedelta(days=expiry_days)
         today = datetime.now().date()
         days_left = (deadline - today).days
@@ -149,7 +154,7 @@ def main():
     
     # --- 側邊欄 ---
     with st.sidebar:
-        # 管理員登入區塊 (移到最上方，方便老師操作)
+        # 管理員登入區塊
         st.markdown("### 🔐 管理員登入")
         st.caption("輸入密碼以啟用「結案」與「刪除」權限")
         admin_pwd = st.text_input("管理密碼", type="password", placeholder="老師請在此輸入")
@@ -164,7 +169,7 @@ def main():
             
         st.divider()
 
-        # 新增物品 (任何人都可以新增，或是您也可以把這裡包在 is_admin 裡面)
+        # 新增物品
         st.header("➕ 新增拾獲物品")
         
         with st.form("add_item_form", clear_on_submit=True):
@@ -191,7 +196,14 @@ def main():
                     final_desc = desc if desc else "無特殊描述"
                     
                     df = load_data()
-                    new_id = len(df) + 1 if not df.empty else 1
+                    
+                    # --- [修正點1] 更安全的 ID 生成邏輯 ---
+                    if not df.empty:
+                        # 找出目前最大的 ID 並 +1，確保不重複
+                        new_id = df["ID"].max() + 1
+                    else:
+                        new_id = 1
+                    
                     new_data = {
                         "ID": new_id,
                         "物品名稱": name,
@@ -207,95 +219,8 @@ def main():
                 else:
                     st.error("⚠️ 缺漏必填項目")
 
-        # 系統設定 (僅管理員可見)
+        # 系統設定
         if is_admin:
             st.divider()
             st.subheader("⚙️ 系統設定")
-            new_expiry = st.number_input("設定認領期限 (天)", min_value=1, value=current_expiry_days)
-            if new_expiry != current_expiry_days:
-                config["expiry_days"] = new_expiry
-                save_config(config)
-                st.rerun()
-
-    # --- 主畫面顯示 ---
-    col_filter, col_space = st.columns([2, 5])
-    with col_filter:
-        filter_status = st.radio("👀 篩選狀態", ["全部", "未領取", "已領回"], horizontal=True)
-
-    st.write("") 
-
-    df = load_data()
-    
-    if df.empty:
-        st.info("目前沒有失物資料。")
-    else:
-        if filter_status == "未領取":
-            df = df[df["狀態"] == "未領取"]
-        elif filter_status == "已領回":
-            df = df[df["狀態"] == "已領回"]
-            
-        df = df.sort_values(by="ID", ascending=False)
-
-        for index, row in df.iterrows():
-            with st.container(border=True):
-                col1, col2, col3 = st.columns([1.5, 2.5, 1])
-                
-                days_left, deadline_date = get_days_left(row['拾獲日期'], current_expiry_days)
-                
-                with col1:
-                    if os.path.exists(row["圖片路徑"]):
-                        st.image(row["圖片路徑"], use_container_width=True)
-                    else:
-                        st.warning("圖片遺失")
-                
-                with col2:
-                    header_cols = st.columns([3, 2])
-                    with header_cols[0]:
-                        st.markdown(f"### {row['物品名稱']}")
-                    with header_cols[1]:
-                        if row['狀態'] == "未領取":
-                            st.markdown('<span class="status-badge-open">🔴 等待失主</span>', unsafe_allow_html=True)
-                            if days_left >= 0:
-                                st.markdown(f'<span class="countdown-tag">⏳ 剩餘 {days_left} 天</span>', unsafe_allow_html=True)
-                            else:
-                                st.markdown(f'<span class="expired-tag">⚠️ 已過期 {abs(days_left)} 天</span>', unsafe_allow_html=True)
-                        else:
-                            st.markdown('<span class="status-badge-closed">🟢 已結案</span>', unsafe_allow_html=True)
-
-                    st.markdown("---")
-                    st.markdown(f"**📍 地點：** {row['拾獲地點']}")
-                    st.markdown(f"**📅 拾獲日：** {row['拾獲日期']}")
-                    st.markdown(f"**🛑 截止日：** {deadline_date} (保留 {current_expiry_days} 天)")
-                    st.markdown(f"**📝 描述：** {row['特徵描述']}")
-
-                # 右側操作區塊 (權限控管核心)
-                with col3:
-                    st.write("") 
-                    st.write("") 
-                    
-                    if row['狀態'] == "未領取":
-                        # 權限判斷
-                        if is_admin:
-                            # 只有管理員看得到「有人領走了」
-                            st.button(
-                                "🙋‍♂️ 有人領走了", 
-                                key=f"claim_{row['ID']}", 
-                                type="primary",
-                                on_click=lambda id=row['ID']: update_status(id)
-                            )
-                        else:
-                            # 一般人只會看到提示訊息
-                            st.info("ℹ️ 欲認領請洽學務處")
-                    
-                    # 刪除按鈕 (只有管理員看得到)
-                    if is_admin:
-                        st.write("") 
-                        st.button(
-                            "🗑️ 刪除資料",
-                            key=f"delete_{row['ID']}",
-                            help="此操作無法復原",
-                            on_click=lambda id=row['ID']: delete_item(id)
-                        )
-
-if __name__ == '__main__':
-    main()
+            new_expiry = st.number_input("設定認領期限
