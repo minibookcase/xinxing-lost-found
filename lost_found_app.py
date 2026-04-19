@@ -244,17 +244,15 @@ def restore_data_from_zip(uploaded_zip):
 
 
 def build_excel_report(export_df):
-    """建立含圖片的 Excel 報表"""
+    """建立含圖片的 Excel 報表（已優化：圖片不重疊）"""
     excel_buffer = io.BytesIO()
 
-    # 複製一份，避免改到原始資料
     report_df = export_df.copy()
 
-    # 如果沒有圖片路徑欄位，就補空欄
     if "圖片路徑" not in report_df.columns:
         report_df["圖片路徑"] = ""
 
-    # Excel 內顯示的欄位名稱
+    # 顯示欄位（不含圖片路徑）
     display_df = report_df[[
         "物品名稱",
         "拾獲日期",
@@ -263,7 +261,6 @@ def build_excel_report(export_df):
         "特徵描述"
     ]].copy()
 
-    # 加一欄圖片標題（內容先留空，等等用 insert_image 塞）
     display_df["圖片"] = ""
 
     with pd.ExcelWriter(excel_buffer, engine="xlsxwriter") as writer:
@@ -272,6 +269,7 @@ def build_excel_report(export_df):
         workbook = writer.book
         worksheet = writer.sheets["失物清單"]
 
+        # ===== 樣式 =====
         title_format = workbook.add_format({
             "bold": True,
             "font_size": 16,
@@ -281,14 +279,12 @@ def build_excel_report(export_df):
 
         subtitle_format = workbook.add_format({
             "font_size": 10,
-            "align": "center",
-            "valign": "vcenter"
+            "align": "center"
         })
 
         header_format = workbook.add_format({
             "bold": True,
             "align": "center",
-            "valign": "vcenter",
             "border": 1
         })
 
@@ -297,59 +293,72 @@ def build_excel_report(export_df):
             "valign": "vcenter"
         })
 
-        # 標題
+        # ===== 標題 =====
         worksheet.merge_range("A1:F1", "台南市南區新興國小 失物招領清單", title_format)
 
         today_str = datetime.now().strftime("%Y-%m-%d")
         worksheet.merge_range("A2:F2", f"報表日期：{today_str}", subtitle_format)
 
-        # 表頭格式
+        # ===== 表頭 =====
         for col_num, col_name in enumerate(display_df.columns):
             worksheet.write(3, col_num, col_name, header_format)
 
-        # 內容格式
+        # ===== 內容 =====
         for row_num in range(len(display_df)):
             for col_num in range(len(display_df.columns)):
                 worksheet.write(row_num + 4, col_num, display_df.iloc[row_num, col_num], cell_format)
 
-        # 欄寬設定（前五欄）
-        for col_num, column in enumerate(display_df.columns[:-1]):  # 最後一欄圖片另外處理
+        # ===== 欄寬（文字欄）=====
+        for col_num, column in enumerate(display_df.columns[:-1]):
             col_width = max(display_df[column].astype(str).map(len).max(), len(column))
             worksheet.set_column(col_num, col_num, min(col_width + 4, 30))
 
-        # 圖片欄寬
+        # ===== 圖片欄設定 =====
         image_col_index = len(display_df.columns) - 1
-        worksheet.set_column(image_col_index, image_col_index, 18)
+        worksheet.set_column(image_col_index, image_col_index, 12)
 
-        # 插入圖片
+        # ===== 插入圖片（關鍵修正）=====
         for row_num, img_path in enumerate(report_df["圖片路徑"]):
-            excel_row = row_num + 4  # 因為 startrow=3，資料從第4列(0-based)開始
+            excel_row = row_num + 4
 
-            # 每列高度拉高，讓圖片看得到
-            worksheet.set_row(excel_row, 80)
+            # 固定列高（避免重疊）
+            worksheet.set_row(excel_row, 50)
 
             if pd.notna(img_path) and str(img_path).strip() and os.path.exists(str(img_path)):
                 try:
+                    img = Image.open(str(img_path))
+                    img = ImageOps.exif_transpose(img)
+
+                    if img.mode in ("RGBA", "P"):
+                        img = img.convert("RGB")
+                    elif img.mode != "RGB":
+                        img = img.convert("RGB")
+
+                    img.thumbnail((60, 60))
+
+                    img_bytes = io.BytesIO()
+                    img.save(img_bytes, format="JPEG", quality=80)
+                    img_bytes.seek(0)
+
                     worksheet.insert_image(
                         excel_row,
                         image_col_index,
-                        str(img_path),
+                        "img.jpg",
                         {
-                            "x_scale": 0.35,
-                            "y_scale": 0.35,
-                            "x_offset": 5,
-                            "y_offset": 5,
+                            "image_data": img_bytes,
+                            "x_offset": 4,
+                            "y_offset": 4,
                             "object_position": 1
                         }
                     )
+
                 except Exception:
-                    worksheet.write(excel_row, image_col_index, "圖片插入失敗", cell_format)
+                    worksheet.write(excel_row, image_col_index, "圖片錯誤", cell_format)
             else:
                 worksheet.write(excel_row, image_col_index, "無圖片", cell_format)
 
     excel_buffer.seek(0)
     return excel_buffer
-
 
 
 # --- 5. 主程式 ---
