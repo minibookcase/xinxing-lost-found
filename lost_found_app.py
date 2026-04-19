@@ -304,7 +304,7 @@ def main():
     """, unsafe_allow_html=True)
 
     # --- 側邊欄 ---
-    with st.sidebar:
+with st.sidebar:
         st.markdown("### 🔐 管理員登入")
         st.caption("輸入密碼以啟用「結案」、「刪除」與「備份」權限")
         admin_pwd = st.text_input("管理密碼", type="password", placeholder="老師請在此輸入")
@@ -315,6 +315,81 @@ def main():
             st.success("🔓 管理員模式已啟用")
         elif admin_pwd:
             st.error("密碼錯誤")
+        
+                    st.write("---")
+            st.markdown("**📄 報表匯出**")
+            st.caption("可依日期與狀態篩選，下載提供老師使用的失物清單")
+
+            # 讀取資料
+            report_df = load_data().copy()
+
+            if not report_df.empty:
+                # 日期轉換
+                report_df["拾獲日期"] = pd.to_datetime(report_df["拾獲日期"], errors="coerce")
+
+                # 篩選條件
+                default_start = datetime.now().date() - timedelta(days=30)
+                default_end = datetime.now().date()
+
+                report_start = st.date_input(
+                    "報表開始日期",
+                    value=default_start,
+                    key="report_start"
+                )
+
+                report_end = st.date_input(
+                    "報表結束日期",
+                    value=default_end,
+                    key="report_end"
+                )
+
+                report_status = st.selectbox(
+                    "報表狀態篩選",
+                    ["全部", "未領取", "已領回"],
+                    index=1,
+                    key="report_status"
+                )
+
+                # 日期篩選
+                filtered_df = report_df[
+                    (report_df["拾獲日期"] >= pd.to_datetime(report_start)) &
+                    (report_df["拾獲日期"] <= pd.to_datetime(report_end))
+                ].copy()
+
+                # 狀態篩選
+                if report_status != "全部":
+                    filtered_df = filtered_df[filtered_df["狀態"] == report_status].copy()
+
+                # 欄位整理
+                export_df = filtered_df[[
+                    "物品名稱",
+                    "拾獲日期",
+                    "拾獲地點",
+                    "狀態",
+                    "特徵描述"
+                ]].copy()
+
+                # 日期格式化
+                export_df["拾獲日期"] = export_df["拾獲日期"].dt.strftime("%Y-%m-%d")
+
+                st.markdown("**報表預覽**")
+                if export_df.empty:
+                    st.info("目前查無符合條件的資料。")
+                else:
+                    st.dataframe(export_df, use_container_width=True, hide_index=True)
+
+                    # CSV 下載
+                    csv_data = export_df.to_csv(index=False, encoding="utf-8-sig")
+
+                    st.download_button(
+                        label="⬇️ 下載失物報表 CSV",
+                        data=csv_data,
+                        file_name=f"失物清單報表_{datetime.now().strftime('%Y%m%d')}.csv",
+                        mime="text/csv",
+                        use_container_width=True
+                    )
+            else:
+                st.info("目前沒有可匯出的失物資料。")
 
         st.divider()
 
@@ -561,6 +636,7 @@ def main():
                             help="此操作無法復原",
                             on_click=lambda id=row["ID"]: delete_item(id)
                         )
+                    
 
 if __name__ == "__main__":
     main()
