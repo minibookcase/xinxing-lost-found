@@ -33,6 +33,25 @@ if not os.path.exists(DATA_FILE):
 # --- 3. 自訂 CSS 美化樣式 ---
 st.markdown("""
     <style>
+        div[data-testid="stTextInput"] input {
+        background-color: #FFFBEA;
+        border: 2px solid #FACC15;
+        border-radius: 10px;
+    }
+
+        .toolbar-box {
+        background-color: #EEF4FF;
+        border: 1px solid #D6E4FF;
+        border-radius: 14px;
+        padding: 14px 18px 6px 18px;
+        margin-bottom: 18px;
+    }
+    .toolbar-title {
+        font-size: 1rem;
+        font-weight: 700;
+        color: #1E3A8A;
+        margin-bottom: 8px;
+    }
     .header-container {
         background-color: #1E3A8A;
         padding: 30px;
@@ -619,7 +638,12 @@ def main():
             else:
                 st.info("目前沒有可匯出的失物資料。")
 
+
     # --- 主畫面顯示 ---
+        # --- 主畫面顯示 ---
+    st.markdown('<div class="toolbar-box">', unsafe_allow_html=True)
+    st.markdown('<div class="toolbar-title">🔎 快速查找失物</div>', unsafe_allow_html=True)
+
     col_filter, col_search = st.columns([2, 3])
 
     with col_filter:
@@ -628,6 +652,7 @@ def main():
     with col_search:
         keyword = st.text_input("🔎 搜尋物品名稱", placeholder="例如：水壺、外套、跳繩")
 
+    st.markdown('</div>', unsafe_allow_html=True)
     st.write("")
 
     df = load_data()
@@ -724,5 +749,7 @@ def main():
                                 help="此操作無法復原",
                                 on_click=lambda id=row["ID"]: delete_item(id)
                             )
+
+
 if __name__ == "__main__":
     main()
