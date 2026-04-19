@@ -315,14 +315,14 @@ def build_excel_report(export_df):
 
         # ===== 圖片欄設定 =====
         image_col_index = len(display_df.columns) - 1
-        worksheet.set_column(image_col_index, image_col_index, 12)
+        worksheet.set_column(image_col_index, image_col_index, 20)
 
         # ===== 插入圖片（關鍵修正）=====
         for row_num, img_path in enumerate(report_df["圖片路徑"]):
             excel_row = row_num + 4
 
             # 固定列高（避免重疊）
-            worksheet.set_row(excel_row, 50)
+            worksheet.set_row(excel_row, 110)
 
             if pd.notna(img_path) and str(img_path).strip() and os.path.exists(str(img_path)):
                 try:
@@ -334,7 +334,10 @@ def build_excel_report(export_df):
                     elif img.mode != "RGB":
                         img = img.convert("RGB")
 
-                    img.thumbnail((60, 60))
+                    max_size = 120
+                    ratio = min(max_size / img.width, max_size / img.height)
+                    new_size = (int(img.width * ratio), int(img.height * ratio))
+                    img = img.resize(new_size)
 
                     img_bytes = io.BytesIO()
                     img.save(img_bytes, format="JPEG", quality=80)
