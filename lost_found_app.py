@@ -94,6 +94,36 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- 4. 輔助函數 ---
+def process_uploaded_image(uploaded_file):
+    """
+    讀取上傳圖片，先做 EXIF 自動轉正，回傳 Pillow Image
+    """
+    try:
+        img = Image.open(uploaded_file)
+        img = ImageOps.exif_transpose(img)
+
+        if img.mode in ("RGBA", "P"):
+            img = img.convert("RGB")
+        elif img.mode != "RGB":
+            img = img.convert("RGB")
+
+        return img, None
+    except Exception as e:
+        return None, str(e)
+
+
+def save_processed_image(img, save_path, max_size=(1600, 1600), quality=75):
+    """
+    將使用者確認後的圖片壓縮儲存成 JPG
+    """
+    try:
+        img = img.copy()
+        img.thumbnail(max_size)
+        img.save(save_path, format="JPEG", quality=quality, optimize=True)
+        return True, None
+    except Exception as e:
+        return False, str(e)
+        
 def process_and_save_image(uploaded_file, save_path, max_size=(1600, 1600), quality=75):
     """
     自動修正照片方向 + 壓縮圖片
@@ -258,6 +288,11 @@ def restore_data_from_zip(uploaded_zip):
 
 # --- 5. 主程式 ---
 def main():
+    if "preview_rotation" not in st.session_state:
+        st.session_state.preview_rotation = 0
+
+    if "preview_image_ready" not in st.session_state:
+        st.session_state.preview_image_ready = False
     config = load_config()
     current_expiry_days = config.get("expiry_days", 60)
 
@@ -284,11 +319,10 @@ def main():
         st.divider()
 
         # 新增物品
-        # 新增物品
-        # 新增物品
+        
         st.header("➕ 新增拾獲物品")
 
-        with st.form("add_item_form", clear_on_submit=True):
+        with st.form("add_item_form", clear_on_submit=False):
             name = st.text_input("🏷️ 物品名稱 (必填)")
             uploaded_file = st.file_uploader("📷 上傳照片 (必填)", type=["png", "jpg", "jpeg"])
 
@@ -297,20 +331,59 @@ def main():
             date = st.date_input("📅 拾獲日期", datetime.now())
             desc = st.text_area("📝 特徵描述 (選填)")
 
+            # 先處理上傳圖，做預覽
+            preview_img = None
+            if uploaded_file is not None:
+                temp_img, error_msg = process_uploaded_image(uploaded_file)
+                if temp_img is not None:
+                    # 依照目前旋轉角度做預覽
+                    preview_img = temp_img.rotate(
+                        -st.session_state.preview_rotation,
+                        expand=True
+                    )
+                    st.image(preview_img, caption="照片預覽", use_container_width=True)
+                else:
+                    st.error(f"圖片讀取失敗：{error_msg}")
+
+            # 旋轉控制
+            col_left, col_right = st.columns(2)
+            with col_left:
+                rotate_left = st.form_submit_button("↺ 向左轉 90°", use_container_width=True)
+            with col_right:
+                rotate_right = st.form_submit_button("↻ 向右轉 90°", use_container_width=True)
+
+            if rotate_left:
+                st.session_state.preview_rotation = (st.session_state.preview_rotation - 90) % 360
+                st.rerun()
+
+            if rotate_right:
+                st.session_state.preview_rotation = (st.session_state.preview_rotation + 90) % 360
+                st.rerun()
+
+            # 正式發布按鈕
             submitted = st.form_submit_button("🚀 發布失物招領", use_container_width=True)
 
             if submitted:
                 if name and uploaded_file:
-                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+                    # 重新讀一次原圖，再套用使用者旋轉結果
+                    original_img, error_msg = process_uploaded_image(uploaded_file)
+                    if original_img is None:
+                        st.error(f"圖片處理失敗：{error_msg}")
+                        st.stop()
 
-                    # 統一存成 JPG
+                    final_img = original_img.rotate(
+                        -st.session_state.preview_rotation,
+                        expand=True
+                    )
+
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
                     img_filename = f"{timestamp}.jpg"
                     img_path = os.path.join(IMG_DIR, img_filename)
 
-                    success, error_msg = process_and_save_image(uploaded_file, img_path)
+                    success, save_error = save_processed_image(final_img, img_path)
 
                     if not success:
-                        st.error(f"圖片處理失敗：{error_msg}")
+                        st.error(f"圖片儲存失敗：{save_error}")
                         st.stop()
 
                     final_location = location if location else "未提供"
@@ -340,6 +413,9 @@ def main():
 
                     df = pd.concat([df, pd.DataFrame([new_data])], ignore_index=True)
                     save_data(df)
+
+                    # 發布完成後重置旋轉角度
+                    st.session_state.preview_rotation = 0
 
                     st.success("✅ 發布成功！")
                     st.rerun()
