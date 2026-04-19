@@ -24,11 +24,9 @@ ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "720720")
 
 DATA_COLUMNS = ["ID", "物品名稱", "拾獲地點", "拾獲日期", "特徵描述", "圖片路徑", "狀態"]
 
-# 確保資料目錄存在
 os.makedirs(BASE_DATA_DIR, exist_ok=True)
 os.makedirs(IMG_DIR, exist_ok=True)
 
-# 若 CSV 不存在，自動建立空檔
 if not os.path.exists(DATA_FILE):
     pd.DataFrame(columns=DATA_COLUMNS).to_csv(DATA_FILE, index=False)
 
@@ -95,9 +93,7 @@ st.markdown("""
 
 # --- 4. 輔助函數 ---
 def process_uploaded_image(uploaded_file):
-    """
-    讀取上傳圖片，先做 EXIF 自動轉正，回傳 Pillow Image
-    """
+    """讀取上傳圖片，先做 EXIF 自動轉正，回傳 Pillow Image"""
     try:
         img = Image.open(uploaded_file)
         img = ImageOps.exif_transpose(img)
@@ -113,9 +109,7 @@ def process_uploaded_image(uploaded_file):
 
 
 def save_processed_image(img, save_path, max_size=(1600, 1600), quality=75):
-    """
-    將使用者確認後的圖片壓縮儲存成 JPG
-    """
+    """將使用者確認後的圖片壓縮儲存成 JPG"""
     try:
         img = img.copy()
         img.thumbnail(max_size)
@@ -123,37 +117,7 @@ def save_processed_image(img, save_path, max_size=(1600, 1600), quality=75):
         return True, None
     except Exception as e:
         return False, str(e)
-        
-def process_and_save_image(uploaded_file, save_path, max_size=(1600, 1600), quality=75):
-    """
-    自動修正照片方向 + 壓縮圖片
-    - uploaded_file: Streamlit 上傳檔案
-    - save_path: 儲存路徑
-    - max_size: 最長邊限制
-    - quality: JPEG 壓縮品質（建議 70~80）
-    """
-    try:
-        img = Image.open(uploaded_file)
 
-        # 1. 自動依 EXIF 修正方向
-        img = ImageOps.exif_transpose(img)
-
-        # 2. 轉成 RGB，避免 PNG / HEIC / 透明圖造成 JPEG 存檔失敗
-        if img.mode in ("RGBA", "P"):
-            img = img.convert("RGB")
-        elif img.mode != "RGB":
-            img = img.convert("RGB")
-
-        # 3. 縮圖（保留比例）
-        img.thumbnail(max_size)
-
-        # 4. 壓縮存檔成 JPEG
-        img.save(save_path, format="JPEG", quality=quality, optimize=True)
-
-        return True, None
-
-    except Exception as e:
-        return False, str(e)
 
 def load_config():
     if os.path.exists(CONFIG_FILE):
@@ -164,9 +128,11 @@ def load_config():
             return {"expiry_days": 60}
     return {"expiry_days": 60}
 
+
 def save_config(config):
     with open(CONFIG_FILE, "w", encoding="utf-8") as f:
         json.dump(config, f, ensure_ascii=False, indent=2)
+
 
 def load_data():
     if not os.path.exists(DATA_FILE):
@@ -181,8 +147,10 @@ def load_data():
     except Exception:
         return pd.DataFrame(columns=DATA_COLUMNS)
 
+
 def save_data(df):
     df.to_csv(DATA_FILE, index=False, encoding="utf-8-sig")
+
 
 def delete_item(item_id):
     df = load_data()
@@ -199,10 +167,12 @@ def delete_item(item_id):
         df = df[df["ID"] != item_id]
         save_data(df)
 
+
 def update_status(item_id):
     df = load_data()
     df.loc[df["ID"] == item_id, "狀態"] = "已領回"
     save_data(df)
+
 
 def get_days_left(found_date_str, expiry_days):
     try:
@@ -214,13 +184,9 @@ def get_days_left(found_date_str, expiry_days):
     except Exception:
         return 0, datetime.now().date()
 
+
 def create_backup_zip():
-    """
-    建立結構乾淨的備份 ZIP：
-    - lost_items.csv
-    - config.json
-    - uploaded_images/xxx.jpg
-    """
+    """建立結構乾淨的備份 ZIP"""
     buffer = io.BytesIO()
 
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zf:
@@ -240,10 +206,9 @@ def create_backup_zip():
     buffer.seek(0)
     return buffer
 
+
 def restore_data_from_zip(uploaded_zip):
-    """
-    將備份還原到 BASE_DATA_DIR（Railway 上即 /data）
-    """
+    """將備份還原到 BASE_DATA_DIR"""
     try:
         with zipfile.ZipFile(uploaded_zip, "r") as zf:
             file_names = zf.namelist()
@@ -251,7 +216,6 @@ def restore_data_from_zip(uploaded_zip):
             if "lost_items.csv" not in file_names:
                 return False, "備份檔中找不到 lost_items.csv"
 
-            # 防止惡意路徑
             for member in file_names:
                 normalized = os.path.normpath(member)
                 if normalized.startswith("..") or os.path.isabs(normalized):
@@ -259,40 +223,31 @@ def restore_data_from_zip(uploaded_zip):
 
             os.makedirs(BASE_DATA_DIR, exist_ok=True)
 
-            # 先刪舊資料
             if os.path.exists(DATA_FILE):
                 os.remove(DATA_FILE)
-
             if os.path.exists(CONFIG_FILE):
                 os.remove(CONFIG_FILE)
-
             if os.path.exists(IMG_DIR):
                 shutil.rmtree(IMG_DIR)
 
             os.makedirs(IMG_DIR, exist_ok=True)
-
-            # 解壓到 /data
             zf.extractall(BASE_DATA_DIR)
 
-            # 若 config.json 不存在，補預設
             if not os.path.exists(CONFIG_FILE):
                 save_config({"expiry_days": 60})
 
-            # 若圖片夾不存在，補上
             os.makedirs(IMG_DIR, exist_ok=True)
-
             return True, "還原成功！"
 
     except Exception as e:
         return False, f"還原失敗：{str(e)}"
+
 
 # --- 5. 主程式 ---
 def main():
     if "preview_rotation" not in st.session_state:
         st.session_state.preview_rotation = 0
 
-    if "preview_image_ready" not in st.session_state:
-        st.session_state.preview_image_ready = False
     config = load_config()
     current_expiry_days = config.get("expiry_days", 60)
 
@@ -304,9 +259,9 @@ def main():
     """, unsafe_allow_html=True)
 
     # --- 側邊欄 ---
-with st.sidebar:
+    with st.sidebar:
         st.markdown("### 🔐 管理員登入")
-        st.caption("輸入密碼以啟用「結案」、「刪除」與「備份」權限")
+        st.caption("輸入密碼以啟用「結案」、「刪除」、「備份」與「報表」權限")
         admin_pwd = st.text_input("管理密碼", type="password", placeholder="老師請在此輸入")
 
         is_admin = (admin_pwd == ADMIN_PASSWORD)
@@ -315,86 +270,10 @@ with st.sidebar:
             st.success("🔓 管理員模式已啟用")
         elif admin_pwd:
             st.error("密碼錯誤")
-        
-                    st.write("---")
-            st.markdown("**📄 報表匯出**")
-            st.caption("可依日期與狀態篩選，下載提供老師使用的失物清單")
-
-            # 讀取資料
-            report_df = load_data().copy()
-
-            if not report_df.empty:
-                # 日期轉換
-                report_df["拾獲日期"] = pd.to_datetime(report_df["拾獲日期"], errors="coerce")
-
-                # 篩選條件
-                default_start = datetime.now().date() - timedelta(days=30)
-                default_end = datetime.now().date()
-
-                report_start = st.date_input(
-                    "報表開始日期",
-                    value=default_start,
-                    key="report_start"
-                )
-
-                report_end = st.date_input(
-                    "報表結束日期",
-                    value=default_end,
-                    key="report_end"
-                )
-
-                report_status = st.selectbox(
-                    "報表狀態篩選",
-                    ["全部", "未領取", "已領回"],
-                    index=1,
-                    key="report_status"
-                )
-
-                # 日期篩選
-                filtered_df = report_df[
-                    (report_df["拾獲日期"] >= pd.to_datetime(report_start)) &
-                    (report_df["拾獲日期"] <= pd.to_datetime(report_end))
-                ].copy()
-
-                # 狀態篩選
-                if report_status != "全部":
-                    filtered_df = filtered_df[filtered_df["狀態"] == report_status].copy()
-
-                # 欄位整理
-                export_df = filtered_df[[
-                    "物品名稱",
-                    "拾獲日期",
-                    "拾獲地點",
-                    "狀態",
-                    "特徵描述"
-                ]].copy()
-
-                # 日期格式化
-                export_df["拾獲日期"] = export_df["拾獲日期"].dt.strftime("%Y-%m-%d")
-
-                st.markdown("**報表預覽**")
-                if export_df.empty:
-                    st.info("目前查無符合條件的資料。")
-                else:
-                    st.dataframe(export_df, use_container_width=True, hide_index=True)
-
-                    # CSV 下載
-                    csv_data = export_df.to_csv(index=False, encoding="utf-8-sig")
-
-                    st.download_button(
-                        label="⬇️ 下載失物報表 CSV",
-                        data=csv_data,
-                        file_name=f"失物清單報表_{datetime.now().strftime('%Y%m%d')}.csv",
-                        mime="text/csv",
-                        use_container_width=True
-                    )
-            else:
-                st.info("目前沒有可匯出的失物資料。")
 
         st.divider()
 
         # 新增物品
-        
         st.header("➕ 新增拾獲物品")
 
         with st.form("add_item_form", clear_on_submit=False):
@@ -406,12 +285,10 @@ with st.sidebar:
             date = st.date_input("📅 拾獲日期", datetime.now())
             desc = st.text_area("📝 特徵描述 (選填)")
 
-            # 先處理上傳圖，做預覽
             preview_img = None
             if uploaded_file is not None:
                 temp_img, error_msg = process_uploaded_image(uploaded_file)
                 if temp_img is not None:
-                    # 依照目前旋轉角度做預覽
                     preview_img = temp_img.rotate(
                         -st.session_state.preview_rotation,
                         expand=True
@@ -420,7 +297,6 @@ with st.sidebar:
                 else:
                     st.error(f"圖片讀取失敗：{error_msg}")
 
-            # 旋轉控制
             col_left, col_right = st.columns(2)
             with col_left:
                 rotate_left = st.form_submit_button("↺ 向左轉 90°", use_container_width=True)
@@ -435,12 +311,10 @@ with st.sidebar:
                 st.session_state.preview_rotation = (st.session_state.preview_rotation + 90) % 360
                 st.rerun()
 
-            # 正式發布按鈕
             submitted = st.form_submit_button("🚀 發布失物招領", use_container_width=True)
 
             if submitted:
                 if name and uploaded_file:
-                    # 重新讀一次原圖，再套用使用者旋轉結果
                     original_img, error_msg = process_uploaded_image(uploaded_file)
                     if original_img is None:
                         st.error(f"圖片處理失敗：{error_msg}")
@@ -489,14 +363,13 @@ with st.sidebar:
                     df = pd.concat([df, pd.DataFrame([new_data])], ignore_index=True)
                     save_data(df)
 
-                    # 發布完成後重置旋轉角度
                     st.session_state.preview_rotation = 0
-
                     st.success("✅ 發布成功！")
                     st.rerun()
                 else:
                     st.error("⚠️ 缺漏必填項目")
-        # 管理功能
+
+        # --- 管理員專屬功能區 ---
         if is_admin:
             st.divider()
             st.subheader("⚙️ 系統設定與維護")
@@ -544,6 +417,74 @@ with st.sidebar:
                         st.rerun()
                     else:
                         st.error(msg)
+
+            st.write("---")
+
+            st.markdown("**📄 報表匯出**")
+            st.caption("可依日期與狀態篩選，下載提供老師使用的失物清單")
+
+            report_df = load_data().copy()
+
+            if not report_df.empty:
+                report_df["拾獲日期"] = pd.to_datetime(report_df["拾獲日期"], errors="coerce")
+
+                default_start = datetime.now().date() - timedelta(days=30)
+                default_end = datetime.now().date()
+
+                report_start = st.date_input(
+                    "報表開始日期",
+                    value=default_start,
+                    key="report_start"
+                )
+
+                report_end = st.date_input(
+                    "報表結束日期",
+                    value=default_end,
+                    key="report_end"
+                )
+
+                report_status = st.selectbox(
+                    "報表狀態篩選",
+                    ["全部", "未領取", "已領回"],
+                    index=1,
+                    key="report_status"
+                )
+
+                filtered_df = report_df[
+                    (report_df["拾獲日期"] >= pd.to_datetime(report_start)) &
+                    (report_df["拾獲日期"] <= pd.to_datetime(report_end))
+                ].copy()
+
+                if report_status != "全部":
+                    filtered_df = filtered_df[filtered_df["狀態"] == report_status].copy()
+
+                export_df = filtered_df[[
+                    "物品名稱",
+                    "拾獲日期",
+                    "拾獲地點",
+                    "狀態",
+                    "特徵描述"
+                ]].copy()
+
+                export_df["拾獲日期"] = export_df["拾獲日期"].dt.strftime("%Y-%m-%d")
+
+                st.markdown("**報表預覽**")
+                if export_df.empty:
+                    st.info("目前查無符合條件的資料。")
+                else:
+                    st.dataframe(export_df, use_container_width=True, hide_index=True)
+
+                    csv_data = export_df.to_csv(index=False, encoding="utf-8-sig")
+
+                    st.download_button(
+                        label="⬇️ 下載失物報表 CSV",
+                        data=csv_data,
+                        file_name=f"失物清單報表_{datetime.now().strftime('%Y%m%d')}.csv",
+                        mime="text/csv",
+                        use_container_width=True
+                    )
+            else:
+                st.info("目前沒有可匯出的失物資料。")
 
     # --- 主畫面顯示 ---
     col_filter, _ = st.columns([2, 5])
@@ -636,7 +577,7 @@ with st.sidebar:
                             help="此操作無法復原",
                             on_click=lambda id=row["ID"]: delete_item(id)
                         )
-                    
+
 
 if __name__ == "__main__":
     main()
