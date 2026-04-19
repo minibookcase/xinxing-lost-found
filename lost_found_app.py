@@ -284,56 +284,67 @@ def main():
         st.divider()
 
         # 新增物品
+        # 新增物品
+        # 新增物品
         st.header("➕ 新增拾獲物品")
 
         with st.form("add_item_form", clear_on_submit=True):
-    name = st.text_input("🏷️ 物品名稱 (必填)")
-    uploaded_file = st.file_uploader("📷 上傳照片 (必填)", type=['png', 'jpg', 'jpeg'])
+            name = st.text_input("🏷️ 物品名稱 (必填)")
+            uploaded_file = st.file_uploader("📷 上傳照片 (必填)", type=["png", "jpg", "jpeg"])
 
-    st.divider()
-    location = st.text_input("📍 拾獲地點 (選填)")
-    date = st.date_input("📅 拾獲日期", datetime.now())
-    desc = st.text_area("📝 特徵描述 (選填)")
+            st.divider()
+            location = st.text_input("📍 拾獲地點 (選填)")
+            date = st.date_input("📅 拾獲日期", datetime.now())
+            desc = st.text_area("📝 特徵描述 (選填)")
 
-    submitted = st.form_submit_button("🚀 發布失物招領", use_container_width=True)
+            submitted = st.form_submit_button("🚀 發布失物招領", use_container_width=True)
 
-    if submitted:
-        if name and uploaded_file:
+            if submitted:
+                if name and uploaded_file:
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
 
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-            img_filename = f"{timestamp}.jpg"
-            img_path = os.path.join(IMG_DIR, img_filename)
+                    # 統一存成 JPG
+                    img_filename = f"{timestamp}.jpg"
+                    img_path = os.path.join(IMG_DIR, img_filename)
 
-            success, error_msg = process_and_save_image(uploaded_file, img_path)
+                    success, error_msg = process_and_save_image(uploaded_file, img_path)
 
-            if not success:
-                st.error(f"圖片處理失敗：{error_msg}")
-                st.stop()
+                    if not success:
+                        st.error(f"圖片處理失敗：{error_msg}")
+                        st.stop()
 
-            final_location = location if location else "未提供"
-            final_desc = desc if desc else "無特殊描述"
+                    final_location = location if location else "未提供"
+                    final_desc = desc if desc else "無特殊描述"
 
-            df = load_data()
+                    df = load_data()
 
-            new_id = df["ID"].max() + 1 if not df.empty else 1
+                    if not df.empty and pd.api.types.is_numeric_dtype(df["ID"]):
+                        new_id = int(df["ID"].max()) + 1
+                    elif not df.empty:
+                        try:
+                            new_id = int(pd.to_numeric(df["ID"], errors="coerce").max()) + 1
+                        except Exception:
+                            new_id = 1
+                    else:
+                        new_id = 1
 
-            new_data = {
-                "ID": new_id,
-                "物品名稱": name,
-                "拾獲地點": final_location,
-                "拾獲日期": str(date),
-                "特徵描述": final_desc,
-                "圖片路徑": img_path,
-                "狀態": "未領取"
-            }
+                    new_data = {
+                        "ID": new_id,
+                        "物品名稱": name,
+                        "拾獲地點": final_location,
+                        "拾獲日期": str(date),
+                        "特徵描述": final_desc,
+                        "圖片路徑": img_path,
+                        "狀態": "未領取"
+                    }
 
-            df = pd.concat([df, pd.DataFrame([new_data])], ignore_index=True)
-            save_data(df)
+                    df = pd.concat([df, pd.DataFrame([new_data])], ignore_index=True)
+                    save_data(df)
 
-            st.success("✅ 發布成功！")
-            st.rerun()
-        else:
-            st.error("⚠️ 缺漏必填項目")
+                    st.success("✅ 發布成功！")
+                    st.rerun()
+                else:
+                    st.error("⚠️ 缺漏必填項目")
         # 管理功能
         if is_admin:
             st.divider()
