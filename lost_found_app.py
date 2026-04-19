@@ -243,6 +243,57 @@ def restore_data_from_zip(uploaded_zip):
         return False, f"還原失敗：{str(e)}"
 
 
+def build_excel_report(export_df):
+    """建立 Excel 報表"""
+    excel_buffer = io.BytesIO()
+
+    with pd.ExcelWriter(excel_buffer, engine="xlsxwriter") as writer:
+        export_df.to_excel(writer, index=False, sheet_name="失物清單", startrow=3)
+
+        workbook = writer.book
+        worksheet = writer.sheets["失物清單"]
+
+        title_format = workbook.add_format({
+            "bold": True,
+            "font_size": 16,
+            "align": "center"
+        })
+
+        subtitle_format = workbook.add_format({
+            "font_size": 10,
+            "align": "center"
+        })
+
+        header_format = workbook.add_format({
+            "bold": True,
+            "align": "center",
+            "border": 1
+        })
+
+        cell_format = workbook.add_format({
+            "border": 1
+        })
+
+        worksheet.merge_range("A1:E1", "台南市南區新興國小 失物招領清單", title_format)
+
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        worksheet.merge_range("A2:E2", f"報表日期：{today_str}", subtitle_format)
+
+        for col_num, col_name in enumerate(export_df.columns):
+            worksheet.write(3, col_num, col_name, header_format)
+
+        for row_num in range(len(export_df)):
+            for col_num in range(len(export_df.columns)):
+                worksheet.write(row_num + 4, col_num, export_df.iloc[row_num, col_num], cell_format)
+
+        for col_num, column in enumerate(export_df.columns):
+            col_width = max(export_df[column].astype(str).map(len).max(), len(column))
+            worksheet.set_column(col_num, col_num, col_width + 4)
+
+    excel_buffer.seek(0)
+    return excel_buffer
+
+
 # --- 5. 主程式 ---
 def main():
     if "preview_rotation" not in st.session_state:
@@ -474,13 +525,13 @@ def main():
                 else:
                     st.dataframe(export_df, use_container_width=True, hide_index=True)
 
-                    csv_data = export_df.to_csv(index=False, encoding="utf-8-sig")
+                    excel_buffer = build_excel_report(export_df)
 
                     st.download_button(
-                        label="⬇️ 下載失物報表 CSV",
-                        data=csv_data,
-                        file_name=f"失物清單報表_{datetime.now().strftime('%Y%m%d')}.csv",
-                        mime="text/csv",
+                        label="⬇️ 下載失物報表（Excel）",
+                        data=excel_buffer,
+                        file_name=f"新興國小失物報表_{datetime.now().strftime('%Y%m%d')}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                         use_container_width=True
                     )
             else:
