@@ -244,11 +244,30 @@ def restore_data_from_zip(uploaded_zip):
 
 
 def build_excel_report(export_df):
-    """建立 Excel 報表"""
+    """建立含圖片的 Excel 報表"""
     excel_buffer = io.BytesIO()
 
+    # 複製一份，避免改到原始資料
+    report_df = export_df.copy()
+
+    # 如果沒有圖片路徑欄位，就補空欄
+    if "圖片路徑" not in report_df.columns:
+        report_df["圖片路徑"] = ""
+
+    # Excel 內顯示的欄位名稱
+    display_df = report_df[[
+        "物品名稱",
+        "拾獲日期",
+        "拾獲地點",
+        "狀態",
+        "特徵描述"
+    ]].copy()
+
+    # 加一欄圖片標題（內容先留空，等等用 insert_image 塞）
+    display_df["圖片"] = ""
+
     with pd.ExcelWriter(excel_buffer, engine="xlsxwriter") as writer:
-        export_df.to_excel(writer, index=False, sheet_name="失物清單", startrow=3)
+        display_df.to_excel(writer, index=False, sheet_name="失物清單", startrow=3)
 
         workbook = writer.book
         worksheet = writer.sheets["失物清單"]
@@ -256,42 +275,81 @@ def build_excel_report(export_df):
         title_format = workbook.add_format({
             "bold": True,
             "font_size": 16,
-            "align": "center"
+            "align": "center",
+            "valign": "vcenter"
         })
 
         subtitle_format = workbook.add_format({
             "font_size": 10,
-            "align": "center"
+            "align": "center",
+            "valign": "vcenter"
         })
 
         header_format = workbook.add_format({
             "bold": True,
             "align": "center",
+            "valign": "vcenter",
             "border": 1
         })
 
         cell_format = workbook.add_format({
-            "border": 1
+            "border": 1,
+            "valign": "vcenter"
         })
 
-        worksheet.merge_range("A1:E1", "台南市南區新興國小 失物招領清單", title_format)
+        # 標題
+        worksheet.merge_range("A1:F1", "台南市南區新興國小 失物招領清單", title_format)
 
         today_str = datetime.now().strftime("%Y-%m-%d")
-        worksheet.merge_range("A2:E2", f"報表日期：{today_str}", subtitle_format)
+        worksheet.merge_range("A2:F2", f"報表日期：{today_str}", subtitle_format)
 
-        for col_num, col_name in enumerate(export_df.columns):
+        # 表頭格式
+        for col_num, col_name in enumerate(display_df.columns):
             worksheet.write(3, col_num, col_name, header_format)
 
-        for row_num in range(len(export_df)):
-            for col_num in range(len(export_df.columns)):
-                worksheet.write(row_num + 4, col_num, export_df.iloc[row_num, col_num], cell_format)
+        # 內容格式
+        for row_num in range(len(display_df)):
+            for col_num in range(len(display_df.columns)):
+                worksheet.write(row_num + 4, col_num, display_df.iloc[row_num, col_num], cell_format)
 
-        for col_num, column in enumerate(export_df.columns):
-            col_width = max(export_df[column].astype(str).map(len).max(), len(column))
-            worksheet.set_column(col_num, col_num, col_width + 4)
+        # 欄寬設定（前五欄）
+        for col_num, column in enumerate(display_df.columns[:-1]):  # 最後一欄圖片另外處理
+            col_width = max(display_df[column].astype(str).map(len).max(), len(column))
+            worksheet.set_column(col_num, col_num, min(col_width + 4, 30))
+
+        # 圖片欄寬
+        image_col_index = len(display_df.columns) - 1
+        worksheet.set_column(image_col_index, image_col_index, 18)
+
+        # 插入圖片
+        for row_num, img_path in enumerate(report_df["圖片路徑"]):
+            excel_row = row_num + 4  # 因為 startrow=3，資料從第4列(0-based)開始
+
+            # 每列高度拉高，讓圖片看得到
+            worksheet.set_row(excel_row, 80)
+
+            if pd.notna(img_path) and str(img_path).strip() and os.path.exists(str(img_path)):
+                try:
+                    worksheet.insert_image(
+                        excel_row,
+                        image_col_index,
+                        str(img_path),
+                        {
+                            "x_scale": 0.35,
+                            "y_scale": 0.35,
+                            "x_offset": 5,
+                            "y_offset": 5,
+                            "object_position": 1
+                        }
+                    )
+                except Exception:
+                    worksheet.write(excel_row, image_col_index, "圖片插入失敗", cell_format)
+            else:
+                worksheet.write(excel_row, image_col_index, "無圖片", cell_format)
 
     excel_buffer.seek(0)
     return excel_buffer
+
 
 
 # --- 5. 主程式 ---
@@ -514,17 +572,29 @@ def main():
                     "拾獲日期",
                     "拾獲地點",
                     "狀態",
-                    "特徵描述"
+                    "特徵描述",
+                    "圖片路徑"
                 ]].copy()
 
                 export_df["拾獲日期"] = export_df["拾獲日期"].dt.strftime("%Y-%m-%d")
 
                 st.markdown("**報表預覽**")
-                if export_df.empty:
+
+                # 畫面預覽用：不顯示圖片路徑
+                preview_df = export_df[[
+                    "物品名稱",
+                    "拾獲日期",
+                    "拾獲地點",
+                    "狀態",
+                    "特徵描述"
+                ]].copy()
+
+                if preview_df.empty:
                     st.info("目前查無符合條件的資料。")
                 else:
-                    st.dataframe(export_df, use_container_width=True, hide_index=True)
+                    st.dataframe(preview_df, use_container_width=True, hide_index=True)
 
+                    # Excel 匯出用：保留完整欄位（包含圖片路徑）
                     excel_buffer = build_excel_report(export_df)
 
                     st.download_button(
