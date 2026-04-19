@@ -1,3 +1,4 @@
+from PIL import Image, ImageOps
 import streamlit as st
 import pandas as pd
 import os
@@ -93,6 +94,37 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- 4. 輔助函數 ---
+def process_and_save_image(uploaded_file, save_path, max_size=(1600, 1600), quality=75):
+    """
+    自動修正照片方向 + 壓縮圖片
+    - uploaded_file: Streamlit 上傳檔案
+    - save_path: 儲存路徑
+    - max_size: 最長邊限制
+    - quality: JPEG 壓縮品質（建議 70~80）
+    """
+    try:
+        img = Image.open(uploaded_file)
+
+        # 1. 自動依 EXIF 修正方向
+        img = ImageOps.exif_transpose(img)
+
+        # 2. 轉成 RGB，避免 PNG / HEIC / 透明圖造成 JPEG 存檔失敗
+        if img.mode in ("RGBA", "P"):
+            img = img.convert("RGB")
+        elif img.mode != "RGB":
+            img = img.convert("RGB")
+
+        # 3. 縮圖（保留比例）
+        img.thumbnail(max_size)
+
+        # 4. 壓縮存檔成 JPEG
+        img.save(save_path, format="JPEG", quality=quality, optimize=True)
+
+        return True, None
+
+    except Exception as e:
+        return False, str(e)
+
 def load_config():
     if os.path.exists(CONFIG_FILE):
         try:
@@ -264,48 +296,51 @@ def main():
 
             submitted = st.form_submit_button("🚀 發布失物招領", use_container_width=True)
 
-            if submitted:
-                if name and uploaded_file:
-                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-                    file_ext = uploaded_file.name.split(".")[-1].lower()
-                    img_filename = f"{timestamp}.{file_ext}"
-                    img_path = os.path.join(IMG_DIR, img_filename)
+if submitted:
+    if name and uploaded_file:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
 
-                    with open(img_path, "wb") as f:
-                        f.write(uploaded_file.getbuffer())
+        # 統一存成 JPG
+        img_filename = f"{timestamp}.jpg"
+        img_path = os.path.join(IMG_DIR, img_filename)
 
-                    final_location = location if location else "未提供"
-                    final_desc = desc if desc else "無特殊描述"
+        success, error_msg = process_and_save_image(uploaded_file, img_path)
 
-                    df = load_data()
+        if not success:
+            st.error(f"圖片處理失敗：{error_msg}")
+            st.stop()
 
-                    if not df.empty and pd.api.types.is_numeric_dtype(df["ID"]):
-                        new_id = int(df["ID"].max()) + 1
-                    elif not df.empty:
-                        try:
-                            new_id = int(pd.to_numeric(df["ID"], errors="coerce").max()) + 1
-                        except Exception:
-                            new_id = 1
-                    else:
-                        new_id = 1
+        final_location = location if location else "未提供"
+        final_desc = desc if desc else "無特殊描述"
 
-                    new_data = {
-                        "ID": new_id,
-                        "物品名稱": name,
-                        "拾獲地點": final_location,
-                        "拾獲日期": str(date),
-                        "特徵描述": final_desc,
-                        "圖片路徑": img_path,
-                        "狀態": "未領取"
-                    }
+        df = load_data()
 
-                    df = pd.concat([df, pd.DataFrame([new_data])], ignore_index=True)
-                    save_data(df)
-                    st.success("✅ 發布成功！")
-                    st.rerun()
-                else:
-                    st.error("⚠️ 缺漏必填項目")
+        if not df.empty and pd.api.types.is_numeric_dtype(df["ID"]):
+            new_id = int(df["ID"].max()) + 1
+        elif not df.empty:
+            try:
+                new_id = int(pd.to_numeric(df["ID"], errors="coerce").max()) + 1
+            except Exception:
+                new_id = 1
+        else:
+            new_id = 1
 
+        new_data = {
+            "ID": new_id,
+            "物品名稱": name,
+            "拾獲地點": final_location,
+            "拾獲日期": str(date),
+            "特徵描述": final_desc,
+            "圖片路徑": img_path,
+            "狀態": "未領取"
+        }
+
+        df = pd.concat([df, pd.DataFrame([new_data])], ignore_index=True)
+        save_data(df)
+        st.success("✅ 發布成功！")
+        st.rerun()
+    else:
+        st.error("⚠️ 缺漏必填項目")
         # 管理功能
         if is_admin:
             st.divider()
