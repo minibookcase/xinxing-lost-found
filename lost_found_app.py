@@ -7,17 +7,25 @@ import io
 import shutil
 from datetime import datetime, timedelta
 
-# --- 1. 頁面基本設定 ---
 st.set_page_config(
     page_title="新興國小失物招領系統", 
     page_icon="🏫", 
     layout="wide"
 )
 
+BASE_DATA_DIR = os.environ.get("DATA_DIR", ".")
+DATA_FILE = os.path.join(BASE_DATA_DIR, 'lost_items.csv')
+IMG_DIR = os.path.join(BASE_DATA_DIR, 'uploaded_images')
+CONFIG_FILE = os.path.join(BASE_DATA_DIR, 'config.json')
+
+if not os.path.exists(IMG_DIR):
+    os.makedirs(IMG_DIR, exist_ok=True)
+
 # --- 2. 檔案與目錄設定 ---
-DATA_FILE = 'lost_items.csv'
-IMG_DIR = 'uploaded_images'
-CONFIG_FILE = 'config.json'
+BASE_DATA_DIR = os.environ.get("DATA_DIR", ".")
+DATA_FILE = os.path.join(BASE_DATA_DIR, "lost_items.csv")
+IMG_DIR = os.path.join(BASE_DATA_DIR, "uploaded_images")
+CONFIG_FILE = os.path.join(BASE_DATA_DIR, "config.json")
 
 # 確保圖片資料夾存在
 if not os.path.exists(IMG_DIR):
@@ -204,7 +212,8 @@ def main():
         admin_pwd = st.text_input("管理密碼", type="password", placeholder="老師請在此輸入")
         
         # 判斷是否為管理員
-        is_admin = (admin_pwd == "720720")
+        ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "720720")
+        is_admin = (admin_pwd == ADMIN_PASSWORD)
         
         if is_admin:
             st.success("🔓 管理員模式已啟用")
