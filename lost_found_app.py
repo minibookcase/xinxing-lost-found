@@ -620,9 +620,13 @@ def main():
                 st.info("目前沒有可匯出的失物資料。")
 
     # --- 主畫面顯示 ---
-    col_filter, _ = st.columns([2, 5])
+    col_filter, col_search = st.columns([2, 3])
+
     with col_filter:
         filter_status = st.radio("👀 篩選狀態", ["全部", "未領取", "已領回"], horizontal=True)
+
+    with col_search:
+        keyword = st.text_input("🔎 搜尋物品名稱", placeholder="例如：水壺、外套、跳繩")
 
     st.write("")
 
@@ -631,86 +635,94 @@ def main():
     if df.empty:
         st.info("目前沒有失物資料。")
     else:
+        # 狀態篩選
         if filter_status == "未領取":
             df = df[df["狀態"] == "未領取"]
         elif filter_status == "已領回":
             df = df[df["狀態"] == "已領回"]
 
+        # 關鍵字搜尋（只搜尋物品名稱）
+        if keyword.strip():
+            df = df[df["物品名稱"].astype(str).str.contains(keyword.strip(), case=False, na=False)]
+
+        # 排序
         df = df.sort_values(by="ID", ascending=False)
 
-        for index, row in df.iterrows():
-            with st.container(border=True):
-                col1, col2, col3 = st.columns([1.5, 2.5, 1])
+        # 篩完後沒資料
+        if df.empty:
+            st.info("查無符合條件的失物資料。")
+        else:
+            for index, row in df.iterrows():
+                with st.container(border=True):
+                    col1, col2, col3 = st.columns([1.5, 2.5, 1])
 
-                days_left, deadline_date = get_days_left(row["拾獲日期"], current_expiry_days)
+                    days_left, deadline_date = get_days_left(row["拾獲日期"], current_expiry_days)
 
-                with col1:
-                    img_path = str(row["圖片路徑"]) if pd.notna(row["圖片路徑"]) else ""
-                    if img_path and os.path.exists(img_path):
-                        st.image(img_path, use_container_width=True)
-                    else:
-                        st.warning("圖片遺失")
+                    with col1:
+                        img_path = str(row["圖片路徑"]) if pd.notna(row["圖片路徑"]) else ""
+                        if img_path and os.path.exists(img_path):
+                            st.image(img_path, use_container_width=True)
+                        else:
+                            st.warning("圖片遺失")
 
-                with col2:
-                    header_cols = st.columns([3, 2])
+                    with col2:
+                        header_cols = st.columns([3, 2])
 
-                    with header_cols[0]:
-                        st.markdown(f"### {row['物品名稱']}")
+                        with header_cols[0]:
+                            st.markdown(f"### {row['物品名稱']}")
 
-                    with header_cols[1]:
-                        if row["狀態"] == "未領取":
-                            st.markdown(
-                                '<span class="status-badge-open">🔴 等待失主</span>',
-                                unsafe_allow_html=True
-                            )
-                            if days_left >= 0:
+                        with header_cols[1]:
+                            if row["狀態"] == "未領取":
                                 st.markdown(
-                                    f'<span class="countdown-tag">⏳ 剩餘 {days_left} 天</span>',
+                                    '<span class="status-badge-open">🔴 等待失主</span>',
                                     unsafe_allow_html=True
                                 )
+                                if days_left >= 0:
+                                    st.markdown(
+                                        f'<span class="countdown-tag">⏳ 剩餘 {days_left} 天</span>',
+                                        unsafe_allow_html=True
+                                    )
+                                else:
+                                    st.markdown(
+                                        f'<span class="expired-tag">⚠️ 已過期 {abs(days_left)} 天</span>',
+                                        unsafe_allow_html=True
+                                    )
                             else:
                                 st.markdown(
-                                    f'<span class="expired-tag">⚠️ 已過期 {abs(days_left)} 天</span>',
+                                    '<span class="status-badge-closed">🟢 已結案</span>',
                                     unsafe_allow_html=True
                                 )
-                        else:
-                            st.markdown(
-                                '<span class="status-badge-closed">🟢 已結案</span>',
-                                unsafe_allow_html=True
-                            )
 
-                    st.markdown("---")
-                    st.markdown(f"**📍 地點：** {row['拾獲地點']}")
-                    st.markdown(f"**📅 拾獲日：** {row['拾獲日期']}")
-                    st.markdown(f"**🛑 截止日：** {deadline_date} (保留 {current_expiry_days} 天)")
-                    st.markdown(f"**📝 描述：** {row['特徵描述']}")
+                        st.markdown("---")
+                        st.markdown(f"**📍 地點：** {row['拾獲地點']}")
+                        st.markdown(f"**📅 拾獲日：** {row['拾獲日期']}")
+                        st.markdown(f"**🛑 截止日：** {deadline_date} (保留 {current_expiry_days} 天)")
+                        st.markdown(f"**📝 描述：** {row['特徵描述']}")
 
-                with col3:
-                    st.write("")
-                    st.write("")
-
-                    unique_key_suffix = f"{row['ID']}_{index}"
-
-                    if row["狀態"] == "未領取":
-                        if is_admin:
-                            st.button(
-                                "🙋‍♂️ 有人領走了",
-                                key=f"claim_{unique_key_suffix}",
-                                type="primary",
-                                on_click=lambda id=row["ID"]: update_status(id)
-                            )
-                        else:
-                            st.info("ℹ️ 欲認領請洽學務處")
-
-                    if is_admin:
+                    with col3:
                         st.write("")
-                        st.button(
-                            "🗑️ 刪除資料",
-                            key=f"delete_{unique_key_suffix}",
-                            help="此操作無法復原",
-                            on_click=lambda id=row["ID"]: delete_item(id)
-                        )
+                        st.write("")
 
+                        unique_key_suffix = f"{row['ID']}_{index}"
 
+                        if row["狀態"] == "未領取":
+                            if is_admin:
+                                st.button(
+                                    "🙋‍♂️ 有人領走了",
+                                    key=f"claim_{unique_key_suffix}",
+                                    type="primary",
+                                    on_click=lambda id=row["ID"]: update_status(id)
+                                )
+                            else:
+                                st.info("ℹ️ 欲認領請洽學務處")
+
+                        if is_admin:
+                            st.write("")
+                            st.button(
+                                "🗑️ 刪除資料",
+                                key=f"delete_{unique_key_suffix}",
+                                help="此操作無法復原",
+                                on_click=lambda id=row["ID"]: delete_item(id)
+                            )
 if __name__ == "__main__":
     main()
